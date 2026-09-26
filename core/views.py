@@ -22,19 +22,22 @@ def get_client_ip(request):
 
 def redirect_qr(request, short_code):
     qr = get_object_or_404(DynamicQR, short_code=short_code)
-    ua = request.META.get('HTTP_USER_AGENT', '').lower()
     
-    # Anti-DoS: If DB is locked due to heavy concurrent scanning, don't crash the redirect.
-    try:
-        ScanAnalytics.objects.create(
-            qr_code=qr,
-            ip_address=get_client_ip(request),
-            user_agent=request.META.get('HTTP_USER_AGENT', 'Unknown'),
-            device_type="Mobile" if "mobi" in ua else "Desktop"
-        )
-    except Exception:
-        pass # Prioritize redirection over analytics if DB is overwhelmed
-    
+    # Logic Flaw Fix: Prevent Double-Counting for Secure QRs
+    # If a user visits the /r/ link for a secure QR, do NOT log here, 
+    # because secure_view will log the scan. Otherwise, analytics get double-counted.
+    if not qr.is_encrypted:
+        ua = request.META.get('HTTP_USER_AGENT', '').lower()
+        try:
+            ScanAnalytics.objects.create(
+                qr_code=qr,
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', 'Unknown'),
+                device_type="Mobile" if "mobi" in ua else "Desktop"
+            )
+        except Exception:
+            pass
+            
     if qr.is_encrypted:
         return redirect('secure_view', short_code=qr.short_code)
         
@@ -142,6 +145,7 @@ def api_generate_qr(request):
     resp = JsonResponse({'status': 'error', 'message': 'Invalid request'})
     resp['Access-Control-Allow-Origin'] = '*'
     return resp
+
 
 
 
