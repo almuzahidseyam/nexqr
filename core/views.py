@@ -145,3 +145,4 @@ def api_generate_qr(request):
 
 
 
+
