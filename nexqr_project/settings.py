@@ -19,13 +19,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
+import os
+
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-*^6g+&n@e(j_i6s4j1@o$8tev!w_hzrt9f#x5fcsq%(q&a1zd0'
+# Fallback to a dev key only if not provided by the environment
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-key-change-me-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*'] # In production, set this strictly to your domain
 
 
 # Application definition
@@ -131,3 +134,4 @@ MAILERS = {
 import os
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
