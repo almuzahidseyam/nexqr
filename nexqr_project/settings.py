@@ -144,3 +144,23 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 
 
+
+# ==============================================================================
+# ENTERPRISE SECURITY HEADERS (PRODUCTION HARDENING)
+# ==============================================================================
+# Prevents the browser from guessing the content type
+SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Enables the browser's XSS filtering
+SECURE_BROWSER_XSS_FILTER = True
+
+# Prevents the site from being framed (Clickjacking protection)
+X_FRAME_OPTIONS = 'DENY'
+
+# In a real HTTPS production environment, you should also uncomment these:
+# SECURE_SSL_REDIRECT = True
+# SESSION_COOKIE_SECURE = True
+# CSRF_COOKIE_SECURE = True
+# SECURE_HSTS_SECONDS = 31536000
+# SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+# SECURE_HSTS_PRELOAD = True
