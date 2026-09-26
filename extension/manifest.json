@@ -1,0 +1,14 @@
+﻿{
+  "manifest_version": 3,
+  "name": "NexQR Sync",
+  "version": "1.0",
+  "description": "Generate dynamic QR codes for any website instantly and sync with your NexQR dashboard.",
+  "permissions": ["activeTab"],
+  "host_permissions": ["http://127.0.0.1:8000/*", "http://localhost:8000/*"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "128": "icon.png"
+  }
+}

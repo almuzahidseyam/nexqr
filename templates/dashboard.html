@@ -1,0 +1,261 @@
+﻿{% extends 'base.html' %}
+
+{% block content %}
+<div class="w-full max-w-6xl flex flex-col gap-8">
+    
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+            <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">Create new QR</h1>
+            <p class="text-sm text-slate-500 mb-8">Standard, Trackable, or Password Encrypted.</p>
+            
+            <form id="qr-form" class="space-y-5">
+                {% csrf_token %}
+                
+                <div class="flex bg-slate-100 p-1 rounded-xl">
+    <label class="flex-1 cursor-pointer">
+        <input type="radio" name="type" value="standard" class="peer sr-only" checked onchange="toggleFields()">
+        <div class="text-center py-2 rounded-lg text-[10px] sm:text-xs font-bold text-slate-500 peer-checked:bg-white peer-checked:text-indigo-600 peer-checked:shadow-sm transition-all">Standard</div>
+    </label>
+    <label class="flex-1 cursor-pointer">
+        <input type="radio" name="type" value="dynamic" class="peer sr-only" onchange="toggleFields()">
+        <div class="text-center py-2 rounded-lg text-[10px] sm:text-xs font-bold text-slate-500 peer-checked:bg-white peer-checked:text-indigo-600 peer-checked:shadow-sm transition-all">Dynamic</div>
+    </label>
+    <label class="flex-1 cursor-pointer">
+        <input type="radio" name="type" value="secure" class="peer sr-only" onchange="toggleFields()">
+        <div class="text-center py-2 rounded-lg text-[10px] sm:text-xs font-bold text-slate-500 peer-checked:bg-white peer-checked:text-red-500 peer-checked:shadow-sm transition-all flex items-center justify-center gap-1">
+            Secure <span class="bg-red-100 text-red-700 px-1 rounded-md">AES</span>
+        </div>
+    </label>
+    <label class="flex-1 cursor-pointer">
+        <input type="radio" name="type" value="artistic" class="peer sr-only" onchange="toggleFields()">
+        <div class="text-center py-2 rounded-lg text-[10px] sm:text-xs font-bold text-slate-500 peer-checked:bg-white peer-checked:text-fuchsia-600 peer-checked:shadow-sm transition-all flex items-center justify-center gap-1">
+            Artistic <span class="bg-fuchsia-100 text-fuchsia-700 px-1 rounded-md">AI</span>
+        </div>
+    </label>
+</div>
+                    </label>
+                    <label class="flex-1 cursor-pointer">
+                        <input type="radio" name="type" value="dynamic" class="peer sr-only" onchange="toggleFields()">
+                        <div class="text-center py-2 rounded-lg text-xs font-bold text-slate-500 peer-checked:bg-white peer-checked:text-indigo-600 peer-checked:shadow-sm transition-all">Dynamic</div>
+                    </label>
+                    <label class="flex-1 cursor-pointer">
+                        <input type="radio" name="type" value="secure" class="peer sr-only" onchange="toggleFields()">
+                        <div class="text-center py-2 rounded-lg text-xs font-bold text-slate-500 peer-checked:bg-white peer-checked:text-red-500 peer-checked:shadow-sm transition-all flex items-center justify-center gap-1">
+                            Secure <span class="bg-red-100 text-red-700 text-[9px] px-1.5 py-0.5 rounded-md">AES</span>
+                        </div>
+                    </label>
+                </div>
+
+                <div id="name-container" class="hidden">
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">QR Code Name</label>
+                    <input type="text" id="name-input" name="name" placeholder="e.g. Secret Note" 
+                        class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 text-slate-700">
+                </div>
+
+                <div id="url-container">
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Destination URL</label>
+                    <input type="url" id="url-input" name="url" placeholder="https://example.com" 
+                        class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 text-slate-700 font-medium">
+                </div>
+                
+                <div id="secure-container" class="hidden space-y-5">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Secret Payload (Text or URL)</label>
+                        <textarea id="payload-input" rows="3" placeholder="Enter sensitive information..." 
+                            class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-red-500 text-slate-700"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Encryption Password</label>
+                        <input type="password" id="password-input" placeholder="Strong password" 
+                            class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-red-500 text-slate-700 font-bold tracking-widest">
+                    </div>
+                </div>
+                
+                                <div id="artistic-container" class="hidden">
+                    <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">AI Art Prompt</label>
+                    <textarea id="prompt-input" rows="3" placeholder="e.g. A beautiful futuristic cyberpunk city, neon lights, highly detailed masterpiece" 
+                        class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-fuchsia-500 text-slate-700"></textarea>
+                </div>
+                
+                <button type="submit" id="submit-btn" class="w-full bg-slate-900 hover:bg-indigo-600 text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg hover:shadow-indigo-200">
+                    <span id="btn-text">Generate QR Code</span>
+                </button>
+            </form>
+        </div>
+
+        <div class="bg-slate-100/50 p-8 rounded-3xl border border-slate-100 flex flex-col items-center justify-center min-h-[400px]">
+            <div id="qr-container" class="hidden flex-col items-center">
+                <div class="bg-white p-4 rounded-2xl shadow-sm mb-6 border border-slate-100 relative">
+                    <img id="qr-result" src="" alt="Generated QR" class="w-48 h-48 rounded-lg">
+                </div>
+                <div class="text-center mb-6">
+                    <p class="text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Points to</p>
+                    <a id="qr-link" href="#" target="_blank" class="text-sm font-medium text-indigo-600 hover:underline break-all"></a>
+                </div>
+                <a id="download-btn" href="#" download="nexqr.png" class="w-full max-w-[200px] bg-white text-slate-700 font-bold py-2.5 px-4 rounded-xl border border-slate-200 text-center transition-all shadow-sm">
+                    Download PNG
+                </a>
+            </div>
+            
+            <div id="empty-state" class="flex flex-col items-center text-center opacity-50">
+                <span class="text-6xl mb-4">🔲</span>
+                <p class="text-sm font-medium text-slate-500">Your generated QR code<br>will appear here</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Section: List -->
+    <div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+        <h2 class="text-xl font-bold text-slate-900 mb-6">Your Database QRs</h2>
+        {% if qrs %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="border-b border-slate-100 text-xs uppercase tracking-wider text-slate-400">
+                        <th class="pb-3 font-semibold">Name & Type</th>
+                        <th class="pb-3 font-semibold">Short Link</th>
+                        <th class="pb-3 font-semibold text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="text-sm text-slate-700">
+                    {% for qr in qrs %}
+                    <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                        <td class="py-4 font-medium">
+                            {{ qr.name }}
+                            {% if qr.is_encrypted %}
+<span class="ml-2 bg-red-100 text-red-700 text-[10px] px-1.5 py-0.5 rounded-md">AES</span>
+{% endif %}
+{% if qr.is_artistic %}
+<span class="ml-2 bg-fuchsia-100 text-fuchsia-700 text-[10px] px-1.5 py-0.5 rounded-md">AI</span>
+{% endif %}
+                            <br>
+                            <span class="text-xs text-slate-400 font-normal truncate max-w-[200px] inline-block">
+                                {% if qr.is_encrypted %}
+<span class="ml-2 bg-red-100 text-red-700 text-[10px] px-1.5 py-0.5 rounded-md">AES</span>
+{% endif %}
+{% if qr.is_artistic %}
+<span class="ml-2 bg-fuchsia-100 text-fuchsia-700 text-[10px] px-1.5 py-0.5 rounded-md">AI</span>
+{% endif %}
+                            </span>
+                        </td>
+                        <td class="py-4">
+                            {% if qr.is_encrypted %}
+<span class="ml-2 bg-red-100 text-red-700 text-[10px] px-1.5 py-0.5 rounded-md">AES</span>
+{% endif %}
+{% if qr.is_artistic %}
+<span class="ml-2 bg-fuchsia-100 text-fuchsia-700 text-[10px] px-1.5 py-0.5 rounded-md">AI</span>
+{% endif %}
+                        </td>
+                        <td class="py-4 text-right">
+                            <a href="{% url 'analytics_view' qr.short_code %}" class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                                📊 Analytics
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+            <p class="text-slate-500 text-sm font-medium">No database QR codes generated yet.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+        function toggleFields() {
+        const type = document.querySelector('input[name="type"]:checked').value;
+        const nameContainer = document.getElementById('name-container');
+        const urlContainer = document.getElementById('url-container');
+        const secureContainer = document.getElementById('secure-container');
+        const artisticContainer = document.getElementById('artistic-container');
+        const submitBtn = document.getElementById('submit-btn');
+
+        nameContainer.classList.add('hidden');
+        urlContainer.classList.remove('hidden');
+        secureContainer.classList.add('hidden');
+        artisticContainer.classList.add('hidden');
+        submitBtn.className = "w-full bg-slate-900 text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg";
+
+        if (type === 'standard') {
+            submitBtn.classList.add('hover:bg-indigo-600', 'hover:shadow-indigo-200');
+        } else if (type === 'dynamic') {
+            nameContainer.classList.remove('hidden');
+            submitBtn.classList.add('hover:bg-indigo-600', 'hover:shadow-indigo-200');
+        } else if (type === 'secure') {
+            nameContainer.classList.remove('hidden');
+            urlContainer.classList.add('hidden');
+            secureContainer.classList.remove('hidden');
+            submitBtn.classList.add('hover:bg-red-600', 'hover:shadow-red-200');
+        } else if (type === 'artistic') {
+            nameContainer.classList.remove('hidden');
+            artisticContainer.classList.remove('hidden');
+            submitBtn.classList.add('hover:bg-fuchsia-600', 'hover:shadow-fuchsia-200');
+        }
+    }
+
+    document.getElementById('qr-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const btnText = document.getElementById('btn-text');
+        const type = document.querySelector('input[name="type"]:checked').value;
+        const nameInput = document.getElementById('name-input').value;
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        
+                const formData = new FormData();
+        formData.append('type', type);
+        formData.append('name', nameInput);
+        formData.append('csrfmiddlewaretoken', csrfToken);
+
+        if (type === 'secure') {
+            const payload = document.getElementById('payload-input').value;
+            const password = document.getElementById('password-input').value;
+            if(!payload || !password) return alert('Payload and password required.');
+            const encryptedText = CryptoJS.AES.encrypt(payload, password).toString();
+            formData.append('encrypted_payload', encryptedText);
+        } else {
+            formData.append('url', document.getElementById('url-input').value);
+            if (type === 'artistic') {
+                formData.append('prompt', document.getElementById('prompt-input').value);
+            }
+        }
+
+        btnText.innerText = 'Generating...';
+
+        try {
+            const res = await fetch("{% url 'generate_qr' %}", {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            
+            if (data.status === 'success') {
+                document.getElementById('empty-state').classList.add('hidden');
+                document.getElementById('qr-container').classList.remove('hidden');
+                document.getElementById('qr-container').classList.add('flex');
+                
+                document.getElementById('qr-result').src = data.qr_image;
+                document.getElementById('download-btn').href = data.qr_image;
+                
+                const linkEl = document.getElementById('qr-link');
+                linkEl.href = data.target_url;
+                linkEl.innerText = data.target_url;
+                
+                if (type === 'dynamic' || type === 'secure') {
+                    setTimeout(() => window.location.reload(), 2000);
+                }
+            } else {
+                alert(data.message);
+            }
+        } catch(err) {
+            alert('Error generating QR code.');
+        } finally {
+            btnText.innerText = 'Generate QR Code';
+        }
+    });
+</script>
+{% endblock %}
+
+

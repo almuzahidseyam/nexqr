@@ -1,0 +1,48 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            width: 300px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0; padding: 16px;
+            background-color: #f8fafc;
+            color: #0f172a;
+            text-align: center;
+        }
+        h2 { margin: 0 0 4px 0; font-size: 18px; color: #4f46e5; }
+        p { font-size: 12px; color: #64748b; margin-bottom: 16px; }
+        .url-box {
+            background: #fff; border: 1px solid #e2e8f0;
+            padding: 8px; border-radius: 8px; font-size: 11px;
+            word-break: break-all; margin-bottom: 16px;
+            color: #334155; font-weight: 500; text-align: left;
+        }
+        button {
+            width: 100%; background-color: #0f172a; color: white;
+            border: none; padding: 12px; border-radius: 8px;
+            font-weight: bold; cursor: pointer; transition: 0.2s;
+        }
+        button:hover { background-color: #4f46e5; }
+        #qr-container { display: none; margin-top: 16px; background: white; padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; }
+        #qr-image { width: 100%; height: auto; border-radius: 8px; }
+        .footer-link { display: block; margin-top: 12px; font-size: 12px; color: #4f46e5; text-decoration: none; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h2>NexQR Sync</h2>
+    <p>Generate a trackable QR for this page.</p>
+    
+    <div class="url-box" id="current-url">Loading...</div>
+    
+    <button id="generate-btn">Generate & Sync</button>
+    
+    <div id="qr-container">
+        <img id="qr-image" src="" alt="QR Code">
+        <a href="http://127.0.0.1:8000/" target="_blank" class="footer-link">View in Dashboard ↗</a>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
