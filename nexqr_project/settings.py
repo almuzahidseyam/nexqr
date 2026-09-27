@@ -81,10 +81,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Email Backend (Satisfies Production Check)
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.smtp.EmailBackend'
-    }
 }
 
 # Enterprise Security Headers
@@ -100,3 +96,4 @@ CSRF_COOKIE_SECURE = True
 SECURE_HSTS_SECONDS = 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
+
