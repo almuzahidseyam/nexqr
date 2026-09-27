@@ -1,4 +1,5 @@
 ﻿from django.shortcuts import render, redirect, get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse, JsonResponse
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
@@ -145,6 +146,7 @@ def api_generate_qr(request):
     resp = JsonResponse({'status': 'error', 'message': 'Invalid request'})
     resp['Access-Control-Allow-Origin'] = '*'
     return resp
+
 
 
 
