@@ -16,7 +16,7 @@ class DynamicQR(models.Model):
     is_artistic = models.BooleanField(default=False)
     prompt = models.TextField(blank=True, null=True)
     
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     
     def save(self, *args, **kwargs):
         if not self.short_code:
@@ -35,7 +35,8 @@ class ScanAnalytics(models.Model):
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(null=True, blank=True)
     device_type = models.CharField(max_length=50, default="Desktop")
-    scanned_at = models.DateTimeField(auto_now_add=True)
+    scanned_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
 
 
 
