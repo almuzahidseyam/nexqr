@@ -1,5 +1,14 @@
 version: '3.8'
 services:
+  db:
+    image: postgres:15-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=nexqr_db
+      - POSTGRES_USER=nexqr_user
+      - POSTGRES_PASSWORD=nexqr_pass
+
   web:
     build: .
     command: bash -c "python manage.py migrate && gunicorn --bind 0.0.0.0:8000 nexqr_project.wsgi:application"
@@ -7,5 +16,12 @@ services:
       - .:/app
     ports:
       - "8000:8000"
-    env_file:
-      - .env
+    environment:
+      - DATABASE_URL=postgres://nexqr_user:nexqr_pass@db:5432/nexqr_db
+      - DEBUG=False
+      - ALLOWED_HOSTS=*
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
