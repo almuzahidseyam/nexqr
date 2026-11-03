@@ -1,244 +1,210 @@
-﻿from django.shortcuts import render, redirect, get_object_or_404
-from django.views.decorators.csrf import csrf_exempt
-from django.http import HttpResponse, JsonResponse
-from django.core.validators import URLValidator
-from django.core.exceptions import ValidationError
-import qrcode
-import io
 import base64
-import os
-import requests
-from .models import DynamicQR, ScanAnalytics
+import io
+import logging
+import re
+from urllib.parse import urlsplit
+import qrcode
+from django.conf import settings
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
+from django.core.validators import URLValidator
+from django.db import DatabaseError
+from django.db.models import F
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
+from django.views.decorators.http import require_GET, require_POST
+from .models import DailyBudget, DynamicQR, ScanAnalytics
+from .artistic import generate_art
 
-REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN", "")
+logger = logging.getLogger(__name__)
 
+
+def error(message, status=400):
+    return JsonResponse({"status": "error", "message": message}, status=status)
+
+
+def reserve_budget(key, limit):
+    date = timezone.now().date()
+    DailyBudget.objects.get_or_create(key=key, date=date)
+    return (
+        DailyBudget.objects.filter(key=key, date=date, used__lt=limit).update(
+            used=F("used") + 1
+        )
+        == 1
+    )
+
+
+def artistic_available(user):
+    return bool(
+        user.is_staff
+        and settings.ARTISTIC_ENABLED
+        and settings.REPLICATE_API_TOKEN
+        and re.fullmatch(r"[a-f0-9]{64}", settings.REPLICATE_MODEL_VERSION)
+    )
+
+
+@login_required
+@require_GET
 def dashboard(request):
-    dynamic_qrs = DynamicQR.objects.all().order_by('-created_at')
-    return render(request, 'dashboard.html', {'qrs': dynamic_qrs})
+    page = Paginator(
+        DynamicQR.objects.filter(owner=request.user).order_by("-created_at"), 20
+    ).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "dashboard.html",
+        {"qrs": page, "artistic_available": artistic_available(request.user)},
+    )
 
-def get_client_ip(request):
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    return x_forwarded_for.split(',')[0] if x_forwarded_for else request.META.get('REMOTE_ADDR')
 
+def record_scan(request, qr):
+    # Do not retain raw IP addresses or arbitrary user-agent text for new scans.
+    device = (
+        "Mobile"
+        if "mobi" in request.META.get("HTTP_USER_AGENT", "").lower()
+        else "Desktop"
+    )
+    try:
+        ScanAnalytics.objects.create(qr_code=qr, device_type=device)
+    except DatabaseError:
+        logger.warning("Scan count could not be saved.")
+
+
+def validate_url(url):
+    if len(url) > 2000:
+        raise ValidationError("URL is too long.")
+    URLValidator(schemes=["http", "https"])(url)
+    if urlsplit(url).username or urlsplit(url).password:
+        raise ValidationError("Do not embed credentials in a URL.")
+
+
+@require_GET
 def redirect_qr(request, short_code):
     qr = get_object_or_404(DynamicQR, short_code=short_code)
-    
-    if not qr.is_encrypted:
-        ua = request.META.get('HTTP_USER_AGENT', '').lower()
-        try:
-            ScanAnalytics.objects.create(
-                qr_code=qr,
-                ip_address=get_client_ip(request),
-                user_agent=request.META.get('HTTP_USER_AGENT', 'Unknown'),
-                device_type="Mobile" if "mobi" in ua else "Desktop"
-            )
-        except Exception:
-            pass
-            
     if qr.is_encrypted:
-        return redirect('secure_view', short_code=qr.short_code)
-        
-    return redirect(qr.original_url)
+        return redirect("secure_view", short_code=short_code)
+    try:
+        validate_url(qr.original_url)
+    except (ValidationError, ValueError):
+        return error("This destination is no longer valid.", 410)
+    record_scan(request, qr)
+    response = redirect(qr.original_url)
+    response["Cache-Control"] = "no-store"
+    return response
 
+
+@require_GET
 def secure_view(request, short_code):
     qr = get_object_or_404(DynamicQR, short_code=short_code, is_encrypted=True)
-    ua = request.META.get('HTTP_USER_AGENT', '').lower()
-    
+    record_scan(request, qr)
+    response = render(request, "secure.html", {"qr": qr})
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+@require_POST
+def generate_qr(request):
+    if not request.user.is_authenticated:
+        return error("Sign in before creating a QR code.", 401)
+    qr_type = request.POST.get("type", "standard")
+    if qr_type not in {"standard", "dynamic", "secure", "artistic"}:
+        return error("Unknown QR type.")
+    name = request.POST.get("name", "").strip() or "Untitled QR"
+    if len(name) > 100:
+        return error("Use a name of at most 100 characters.")
+    payload = request.POST.get("encrypted_payload", "")
+    url = request.POST.get("url", "").strip()
+    prompt = request.POST.get("prompt", "").strip()
+    if qr_type == "secure":
+        if not payload or len(payload) > 10000:
+            return error(
+                "An encrypted payload of at most 10,000 characters is required."
+            )
+    else:
+        try:
+            validate_url(url)
+        except (ValidationError, ValueError):
+            return error(
+                "Enter a valid HTTP or HTTPS URL without credentials (maximum 2000 characters)."
+            )
+    if qr_type == "artistic":
+        if not artistic_available(request.user):
+            return error(
+                "Artistic generation is disabled or unavailable for this account.", 403
+            )
+        if not prompt or len(prompt) > 500:
+            return error("Enter an art prompt between 1 and 500 characters.")
+    if not reserve_budget(f"qr:{request.user.pk}", settings.QR_DAILY_LIMIT):
+        return error("Your daily QR creation limit has been reached.", 429)
+    if qr_type == "artistic" and not reserve_budget(
+        "artistic:global", settings.ARTISTIC_DAILY_LIMIT
+    ):
+        return error(
+            "The server daily artistic-generation limit has been reached.", 429
+        )
+    entry = None
     try:
-        ScanAnalytics.objects.create(
-            qr_code=qr,
-            ip_address=get_client_ip(request),
-            user_agent=request.META.get('HTTP_USER_AGENT', 'Unknown'),
-            device_type="Mobile" if "mobi" in ua else "Desktop"
+        target = url
+        if qr_type != "standard":
+            entry = DynamicQR.objects.create(
+                owner=request.user,
+                name=name,
+                original_url=url or "SECURE_PAYLOAD",
+                is_encrypted=qr_type == "secure",
+                encrypted_payload=payload if qr_type == "secure" else "",
+                is_artistic=qr_type == "artistic",
+                prompt=prompt if qr_type == "artistic" else "",
+            )
+            route = "secure_view" if entry.is_encrypted else "redirect_qr"
+            target = request.build_absolute_uri(reverse(route, args=[entry.short_code]))
+        if qr_type == "artistic":
+            image = generate_art(target, prompt)
+        else:
+            qr = qrcode.QRCode(
+                error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=4
+            )
+            qr.add_data(target)
+            qr.make(fit=True)
+            buffer = io.BytesIO()
+            qr.make_image(fill_color="black", back_color="white").save(
+                buffer, format="PNG"
+            )
+            image = buffer.getvalue()
+        return JsonResponse(
+            {
+                "status": "success",
+                "qr_image": "data:image/png;base64," + base64.b64encode(image).decode(),
+                "target_url": target,
+            }
         )
     except Exception:
-        pass
-        
-    return render(request, 'secure.html', {'qr': qr})
+        if entry:
+            entry.delete()
+        logger.warning("QR generation failed; no provider details exposed.")
+        return error(
+            "Generation failed. Retry later. Artistic attempts still count toward the daily limit.",
+            502,
+        )
 
-def generate_qr(request):
-    if request.method == 'POST':
-        try:
-            qr_type = request.POST.get('type', 'standard')
-            qr_name = request.POST.get('name', 'Untitled QR')
-            
-            if len(qr_name) > 100: qr_name = qr_name[:100]
-            
-            target_url = ""
-            url_validator = URLValidator()
-            
-            if qr_type == 'secure':
-                encrypted_payload = request.POST.get('encrypted_payload', '')
-                if not encrypted_payload:
-                    return JsonResponse({'status': 'error', 'message': 'Payload is required'})
-                
-                if len(encrypted_payload) > 10000:
-                    return JsonResponse({'status': 'error', 'message': 'Payload is too large. Maximum 10KB allowed.'})
-                
-                dynamic_qr = DynamicQR.objects.create(
-                    name=qr_name, 
-                    original_url='SECURE_PAYLOAD',
-                    is_encrypted=True,
-                    encrypted_payload=encrypted_payload
-                )
-                target_url = request.build_absolute_uri(f'/secure/{dynamic_qr.short_code}/')
-                
-            else:
-                url = request.POST.get('url', '')
-                if not url: 
-                    return JsonResponse({'status': 'error', 'message': 'URL is required'})
-                    
-                if len(url) > 2000:
-                    return JsonResponse({'status': 'error', 'message': 'URL is too long. Maximum 2000 characters allowed.'})
-                
-                if not url.startswith('http://') and not url.startswith('https://'):
-                    url = 'https://' + url
-                    
-                try:
-                    url_validator(url)
-                except ValidationError:
-                    return JsonResponse({'status': 'error', 'message': 'Invalid URL format. Please enter a valid website link.'})
-                    
-                target_url = url
-                
-                if qr_type == 'dynamic' or qr_type == 'artistic':
-                    prompt = request.POST.get('prompt', '') if qr_type == 'artistic' else ''
-                    if len(prompt) > 500: prompt = prompt[:500]
-                    
-                    dynamic_qr = DynamicQR.objects.create(name=qr_name, original_url=url, is_artistic=(qr_type=='artistic'), prompt=prompt)
-                    target_url = request.build_absolute_uri(f'/r/{dynamic_qr.short_code}/')
-                    
-                    if qr_type == 'artistic':
-                        if not REPLICATE_API_TOKEN:
-                            return JsonResponse({
-                                'status': 'error', 
-                                'message': 'API Key Missing: Please set REPLICATE_API_TOKEN in your environment or .env'
-                            })
-                        
-                        try:
-                            import replicate
-                            os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
-                            
-                            output = replicate.run(
-                                "nateraw/qrcode-stable-diffusion:9cdabf8f8a991351960c7ce2105de2909514b40bd27ac202dba57935b07d29d4",
-                                input={
-                                    "prompt": prompt,
-                                    "qr_code_content": target_url,
-                                    "negative_prompt": "ugly, disfigured, low quality, blurry",
-                                    "guidance_scale": 7.5,
-                                    "controlnet_conditioning_scale": 1.5
-                                }
-                            )
-                            
-                            if isinstance(output, list) and len(output) > 0:
-                                image_url = output[0]
-                                if not image_url.startswith('https://replicate.delivery/') and not image_url.startswith('https://replicate.com/'):
-                                    raise Exception("Blocked SSRF attempt: Invalid image host.")
-                                
-                                response = requests.get(image_url, timeout=10)
-                                img_b64 = base64.b64encode(response.content).decode()
-                                
-                                return JsonResponse({
-                                    'status': 'success',
-                                    'qr_image': f"data:image/png;base64,{img_b64}",
-                                    'target_url': target_url
-                                })
-                        except requests.exceptions.Timeout:
-                            return JsonResponse({'status': 'error', 'message': 'AI Image download timed out.'})
-                        except Exception as e:
-                            return JsonResponse({'status': 'error', 'message': f'AI Generation Failed: {str(e)}'})
 
-            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=4)
-            qr.add_data(target_url)
-            qr.make(fit=True)
-
-            img = qr.make_image(fill_color="black", back_color="white")
-            buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
-            
-            return JsonResponse({
-                'status': 'success', 
-                'qr_image': f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}",
-                'target_url': target_url
-            })
-            
-        except Exception as e:
-            return JsonResponse({'status': 'error', 'message': f'Server Error: {str(e)}'})
-            
-    return JsonResponse({'status': 'error', 'message': 'Invalid request'})
-
-@csrf_exempt
 def api_generate_qr(request):
-    origin = request.META.get('HTTP_ORIGIN', '')
-    allowed_origin = origin if origin.startswith('chrome-extension://') else 'null'
+    return error("Open the signed-in dashboard to generate a QR code.", 410)
 
-    if request.method == 'OPTIONS':
-        response = HttpResponse()
-        response['Access-Control-Allow-Origin'] = allowed_origin
-        response['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
-        response['Access-Control-Allow-Headers'] = 'Content-Type'
-        return response
 
-    if request.method == 'POST':
-        url = request.POST.get('url', '')
-        qr_name = request.POST.get('name', 'Extension Generated QR')
-        
-        if not url:
-            resp = JsonResponse({'status': 'error', 'message': 'URL is required'})
-            resp['Access-Control-Allow-Origin'] = allowed_origin
-            return resp
-            
-        try:
-            if not url.startswith('http://') and not url.startswith('https://'):
-                url = 'https://' + url
-            URLValidator()(url)
-            
-            dynamic_qr = DynamicQR.objects.create(name=qr_name, original_url=url)
-            target_url = request.build_absolute_uri(f'/r/{dynamic_qr.short_code}/')
-
-            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=4)
-            qr.add_data(target_url)
-            qr.make(fit=True)
-
-            img = qr.make_image(fill_color="black", back_color="white")
-            buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
-            
-            resp = JsonResponse({
-                'status': 'success', 
-                'qr_image': f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}",
-                'target_url': target_url
-            })
-            resp['Access-Control-Allow-Origin'] = allowed_origin
-            return resp
-        except Exception as e:
-            resp = JsonResponse({'status': 'error', 'message': str(e)})
-            resp['Access-Control-Allow-Origin'] = allowed_origin
-            return resp
-            
-    resp = JsonResponse({'status': 'error', 'message': 'Invalid request'})
-    resp['Access-Control-Allow-Origin'] = allowed_origin
-    return resp
-
+@login_required
+@require_GET
 def analytics_view(request, short_code):
-    qr = get_object_or_404(DynamicQR, short_code=short_code)
-    
-    recent_scans = []
-    for scan in qr.scans.order_by('-scanned_at')[:10]:
-        masked_ip = "Unknown"
-        if scan.ip_address:
-            parts = scan.ip_address.split('.')
-            if len(parts) == 4:
-                masked_ip = f"{parts[0]}.{parts[1]}.*.*"
-            else:
-                masked_ip = "Hidden (IPv6)"
-        scan.masked_ip = masked_ip
-        recent_scans.append(scan)
-        
-    return render(request, 'analytics.html', {
-        'qr': qr,
-        'total_scans': qr.scans.count(),
-        'desktop': qr.scans.filter(device_type='Desktop').count(),
-        'mobile': qr.scans.filter(device_type='Mobile').count(),
-        'recent_scans': recent_scans
-    })
+    qr = get_object_or_404(DynamicQR, short_code=short_code, owner=request.user)
+    return render(
+        request,
+        "analytics.html",
+        {
+            "qr": qr,
+            "total_scans": qr.scans.count(),
+            "mobile": qr.scans.filter(device_type="Mobile").count(),
+            "desktop": qr.scans.filter(device_type="Desktop").count(),
+            "recent_scans": qr.scans.order_by("-scanned_at")[:20],
+        },
+    )

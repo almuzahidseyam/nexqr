@@ -1,0 +1,2 @@
+{% extends 'base.html' %}{% block title %}Sign in · NexQR{% endblock %}{% block content %}
+<section class="panel narrow"><h1>Welcome back</h1><p class="muted">Sign in to create and manage your QR codes.</p><form method="post">{% csrf_token %}{{ form.as_p }}<input type="hidden" name="next" value="{{ next }}"><button>Sign in</button></form><p class="muted">Accounts are provided by the site operator.</p></section>{% endblock %}
